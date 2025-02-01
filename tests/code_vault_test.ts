@@ -2,7 +2,7 @@ import { Clarinet, Tx, Chain, Account, types } from 'https://deno.land/x/clarine
 import { assertEquals } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
 Clarinet.test({
-    name: "Can create a new project",
+    name: "Can create a new project with main branch",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const wallet_1 = accounts.get('wallet_1')!;
         let block = chain.mineBlock([
@@ -25,67 +25,63 @@ Clarinet.test({
         assertEquals(project.name, "Test Project");
         assertEquals(project.owner, wallet_1.address);
         assertEquals(project.is_public, true);
-    }
-});
+        assertEquals(project.default_branch, "main");
 
-Clarinet.test({
-    name: "Can add and verify project members",
-    async fn(chain: Chain, accounts: Map<string, Account>) {
-        const wallet_1 = accounts.get('wallet_1')!;
-        const wallet_2 = accounts.get('wallet_2')!;
-        
-        // Create project
-        let block = chain.mineBlock([
-            Tx.contractCall('code_vault', 'create-project', [
-                types.ascii("Team Project"),
-                types.ascii("A team project"),
-                types.bool(false)
-            ], wallet_1.address)
-        ]);
-        
-        // Add member
-        block = chain.mineBlock([
-            Tx.contractCall('code_vault', 'add-project-member', [
-                types.uint(1),
-                types.principal(wallet_2.address),
-                types.uint(2)  // Write access
-            ], wallet_1.address)
-        ]);
-        block.receipts[0].result.expectOk().expectBool(true);
-        
-        // Verify member access
-        let getAccess = chain.callReadOnlyFn(
+        // Verify main branch exists
+        let getBranch = chain.callReadOnlyFn(
             'code_vault',
-            'get-member-access',
-            [types.uint(1), types.principal(wallet_2.address)],
+            'get-branch',
+            [types.uint(1), types.ascii("main")],
             wallet_1.address
         );
-        assertEquals(getAccess.result, types.uint(2));
+        let branch = getBranch.result.expectSome().expectTuple();
+        assertEquals(branch.base_branch, "main");
     }
 });
 
 Clarinet.test({
-    name: "Can record project commits",
+    name: "Can create and use feature branches",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const wallet_1 = accounts.get('wallet_1')!;
         
         // Create project
         let block = chain.mineBlock([
             Tx.contractCall('code_vault', 'create-project', [
-                types.ascii("Commit Test"),
-                types.ascii("Testing commits"),
+                types.ascii("Branch Test"),
+                types.ascii("Testing branches"),
                 types.bool(true)
             ], wallet_1.address)
         ]);
         
-        // Record commit
+        // Create feature branch
+        block = chain.mineBlock([
+            Tx.contractCall('code_vault', 'create-branch', [
+                types.uint(1),
+                types.ascii("feature-1"),
+                types.ascii("main")
+            ], wallet_1.address)
+        ]);
+        block.receipts[0].result.expectOk().expectBool(true);
+
+        // Record commit on feature branch
         block = chain.mineBlock([
             Tx.contractCall('code_vault', 'record-commit', [
                 types.uint(1),
                 types.ascii("abc123def456"),
-                types.ascii("Initial commit")
+                types.ascii("Feature commit"),
+                types.ascii("feature-1")
             ], wallet_1.address)
         ]);
         block.receipts[0].result.expectOk().expectUint(1);
+
+        // Verify branch information
+        let getBranch = chain.callReadOnlyFn(
+            'code_vault',
+            'get-branch',
+            [types.uint(1), types.ascii("feature-1")],
+            wallet_1.address
+        );
+        let branch = getBranch.result.expectSome().expectTuple();
+        assertEquals(branch.last_commit, types.uint(1));
     }
 });

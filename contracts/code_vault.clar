@@ -1,4 +1,5 @@
 ;; CodeVault Contract
+;; Secure repository management system with enhanced member access control
 
 ;; Constants
 (define-constant ERR-NOT-AUTHORIZED (err u100))
@@ -13,11 +14,15 @@
 (define-constant ACCESS-LEVEL-WRITE u2)
 (define-constant ACCESS-LEVEL-ADMIN u3)
 
-;; [Previous data maps remain unchanged...]
+;; Read-only function to get member access level
+(define-read-only (get-member-access (project-id uint) (member principal))
+    (default-to u0 (get access-level (map-get? project-members 
+        { project-id: project-id, member: member })))
+)
 
-;; New read-only function
-(define-read-only (get-commit (project-id uint) (commit-id uint))
-    (map-get? project-commits { project-id: project-id, commit-id: commit-id })
+;; Helper function to check admin privileges
+(define-private (is-project-admin (project-id uint) (user principal))
+    (is-eq (get-member-access project-id user) ACCESS-LEVEL-ADMIN)
 )
 
 ;; Enhanced project creation with input validation
@@ -32,12 +37,15 @@
     )
 )
 
-;; Enhanced member management
+;; Enhanced member management with proper validation
 (define-public (add-project-member (project-id uint) (member principal) (access-level uint))
-    (let ((project (map-get? projects { project-id: project-id })))
-        (asserts! (is-some project) ERR-NOT-FOUND)
-        (asserts! (is-eq (some tx-sender) (get owner project)) ERR-NOT-AUTHORIZED)
+    (let (
+        (project (unwrap! (map-get? projects { project-id: project-id }) ERR-NOT-FOUND))
+        (current-access (get-member-access project-id member))
+    )
+        (asserts! (is-project-admin project-id tx-sender) ERR-NOT-AUTHORIZED)
         (asserts! (and (>= access-level ACCESS-LEVEL-READ) (<= access-level ACCESS-LEVEL-ADMIN)) ERR-INVALID-ACCESS-LEVEL)
+        (asserts! (is-eq current-access u0) ERR-ALREADY-EXISTS)
         (map-set project-members
             { project-id: project-id, member: member }
             { access-level: access-level }
@@ -46,12 +54,15 @@
     )
 )
 
-;; New function to remove project members
+;; Enhanced member removal with proper validation
 (define-public (remove-project-member (project-id uint) (member principal))
-    (let ((project (map-get? projects { project-id: project-id })))
-        (asserts! (is-some project) ERR-NOT-FOUND)
-        (asserts! (is-eq (some tx-sender) (get owner project)) ERR-NOT-AUTHORIZED)
+    (let (
+        (project (unwrap! (map-get? projects { project-id: project-id }) ERR-NOT-FOUND))
+        (member-access (get-member-access project-id member))
+    )
+        (asserts! (is-project-admin project-id tx-sender) ERR-NOT-AUTHORIZED)
         (asserts! (not (is-eq member tx-sender)) ERR-NOT-AUTHORIZED)
+        (asserts! (> member-access u0) ERR-NOT-FOUND)
         (map-delete project-members { project-id: project-id, member: member })
         (ok true)
     )

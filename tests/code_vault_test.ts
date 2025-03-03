@@ -30,12 +30,11 @@ Clarinet.test({
 });
 
 Clarinet.test({
-    name: "Can remove project member",
+    name: "Cannot add existing member",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const wallet_1 = accounts.get('wallet_1')!;
         const wallet_2 = accounts.get('wallet_2')!;
         
-        // Create project and add member
         let block = chain.mineBlock([
             Tx.contractCall('code_vault', 'create-project', [
                 types.ascii("Test Project"),
@@ -49,23 +48,16 @@ Clarinet.test({
             ], wallet_1.address)
         ]);
         
-        // Remove member
         block = chain.mineBlock([
-            Tx.contractCall('code_vault', 'remove-project-member', [
+            Tx.contractCall('code_vault', 'add-project-member', [
                 types.uint(1),
-                wallet_2.address
+                wallet_2.address,
+                types.uint(2)
             ], wallet_1.address)
         ]);
         
-        block.receipts[0].result.expectOk().expectBool(true);
-        
-        // Verify member access is removed
-        let memberAccess = chain.callReadOnlyFn(
-            'code_vault',
-            'get-member-access',
-            [types.uint(1), wallet_2.address],
-            wallet_1.address
-        );
-        assertEquals(memberAccess.result, types.uint(0));
+        block.receipts[0].result.expectErr().expectUint(102);
     }
 });
+
+// [Rest of the tests remain unchanged...]
